@@ -1,0 +1,9 @@
+{
+  "name": "h4zp-hr",
+  "version": "2.2.0",
+  "private": true,
+  "description": "H4ZP HR — staff, attendance, leave, payroll and self-service for Hands 4 Zero Poverty Trust",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "@supabase/supabase-js": "2.45.4", "react": "18.3.1", "react-dom": "18.3.1" },
+  "devDependencies": { "esbuild": "0.21.5" }
+}
