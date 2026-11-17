@@ -1,4 +1,4 @@
-// Builds ../1-UPLOAD-TO-WEBSITE/hr/index.html from the source code.  Run:  npm install  then  npm run build
+// Builds build/index.html from the source code.  Run:  npm install  then  npm run build
 import * as esbuild from 'esbuild';
 import fs from 'fs';
 await esbuild.build({ entryPoints: ['entry.jsx'], bundle: true, minify: true, format: 'iife', outfile: 'dist/app.js',
@@ -32,6 +32,6 @@ ${js}
 </body>
 </html>
 `;
-fs.mkdirSync('../1-UPLOAD-TO-WEBSITE/hr', { recursive: true });
-fs.writeFileSync('../1-UPLOAD-TO-WEBSITE/hr/index.html', html);
+fs.mkdirSync('build', { recursive: true });
+fs.writeFileSync('build/index.html', html);
 console.log('Built 1-UPLOAD-TO-WEBSITE/hr/index.html —', Math.round(html.length / 1024), 'KB');
