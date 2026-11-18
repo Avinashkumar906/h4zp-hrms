@@ -83,7 +83,7 @@ function ageOn(dob, dateIso) {
  * att:  { [ym]: { codes: {1:'P',...}, extra: {...} } }
  * pay:  { [ym]: { status, partial, date, mode, utr, remarks } }
  */
-export function computeYear(st, revisions, att, pay, S, recs = []) {
+export function computeYear(st, revisions, att, pay, S, recs = [], roster = {}) {
   const months = fyMonths(S.fyStart);
   const from = payrollFrom(st);
   const dol = dayNum(st.dol);
@@ -94,38 +94,66 @@ export function computeYear(st, revisions, att, pay, S, recs = []) {
   let loanBal = N(st.loan_given);
   let due = N(st.opening_due);
   const out = [];
-  // approved leave requests fill in days the attendance grid leaves blank (Sundays and holidays are skipped)
-  const holidays = new Set((S.holidays || []).map((h) => `${Number(h.md.slice(0, 2)) >= 4 ? S.fyStart : S.fyStart + 1}-${h.md}`));
+  const holidays = holidaySet(S);
+  const isOff = offDayFn(st, S, roster);
+  const flexible = weekOffMode(st, S) === 'flexible';
+  // approved leave requests fill in days the attendance grid leaves blank (week-offs and holidays are skipped)
   const leaveDay = {};
   for (const r of recs) {
     if (r.kind !== 'leave_request' || r.data.status !== 'Approved' || !r.data.from) continue;
     for (let d = dayNum(r.data.from); d <= dayNum(r.data.to || r.data.from); d++) {
       const day = iso(new Date(d * 86400000));
-      if (new Date(d * 86400000).getUTCDay() === 0 || holidays.has(day)) continue;
+      if (isOff(day) || holidays.has(day)) continue;
       leaveDay[day] = r.data.half ? 'HD' : r.data.type;
     }
   }
   const punchDays = new Set(recs.filter((r) => r.kind === 'punch').map((r) => r.data.date));
+  const otDayReq = new Set(recs.filter((r) => r.kind === 'ot_request' && r.data.status === 'Approved' && r.data.type !== 'hours').map((r) => r.data.date));
+  const otHoursBy = {};
+  for (const r of recs) if (r.kind === 'ot_request' && r.data.status === 'Approved' && r.data.type === 'hours') otHoursBy[r.data.date.slice(0, 7)] = (otHoursBy[r.data.date.slice(0, 7)] || 0) + N(r.data.hours);
   const reimbBy = {};
   for (const r of recs) if (r.kind === 'expense' && r.data.status === 'Approved' && r.data.pay_ym) reimbBy[r.data.pay_ym] = (reimbBy[r.data.pay_ym] || 0) + N(r.data.amount);
+
+  // ── pass 1: a code for every employed day of the year ──
+  const selfMode = st.attendance_mode === 'self', today = todayIso();
+  const selfFrom = dayNum(st.attendance_self_from) ?? -Infinity;
+  const dayCode = {}, autoDay = {};
+  for (const mo of months) {
+    const a = att[mo.ym] || { codes: {} };
+    const lo = Math.max(dayNum(mo.start), from), hi = Math.min(dayNum(mo.end), dol ?? Infinity);
+    for (let dn = lo; dn <= hi; dn++) {
+      const day = iso(new Date(dn * 86400000)), d = Number(day.slice(8));
+      let c = a.codes?.[d] || leaveDay[day], auto = !a.codes?.[d];
+      if (!c && selfMode && dn >= selfFrom && day < today && !isOff(day) && !holidays.has(day)) c = punchDays.has(day) ? 'P' : 'A';
+      if (!c && isOff(day)) c = 'WO';
+      if (otDayReq.has(day)) { c = 'OT'; auto = true; }
+      if (c) { dayCode[day] = c; if (auto) autoDay[day] = true; }
+    }
+  }
+  // ── pass 2: flexible week-off — in each week (Mon–Sun) the first absence becomes the weekly off ──
+  if (flexible) {
+    const weeks = {};
+    for (const day of Object.keys(dayCode).sort()) {
+      const dn = dayNum(day), wd = (new Date(dn * 86400000).getUTCDay() + 6) % 7; // Monday = 0
+      (weeks[dn - wd] ||= []).push(day);
+    }
+    for (const list of Object.values(weeks)) {
+      if (list.some((day) => dayCode[day] === 'WO' || dayCode[day] === 'OT')) continue;
+      const firstA = list.find((day) => dayCode[day] === 'A');
+      if (firstA) { dayCode[firstA] = 'WO'; autoDay[firstA] = 'flex'; }
+    }
+  }
 
   for (const mo of months) {
     const a = att[mo.ym] || { codes: {}, extra: {} };
     const x = a.extra || {};
     const s = dayNum(mo.start), e = dayNum(mo.end);
     const emp = Math.max(0, Math.min(e, dol ?? e) - Math.max(s, from) + 1);
-    const cnt = { P: 0, A: 0, CL: 0, SL: 0, EL: 0, HD: 0, LWP: 0, WO: 0, HO: 0 };
-    const codes = {};
-    // staff who mark their own attendance: a past working day with no mark, leave or clock-in counts as Absent
-    const selfMode = st.attendance_mode === 'self', today = todayIso();
+    const cnt = { P: 0, A: 0, CL: 0, SL: 0, EL: 0, HD: 0, LWP: 0, WO: 0, HO: 0, OT: 0 };
+    const codes = {}, auto = {};
     if (emp > 0) for (let d = 1; d <= mo.dim; d++) {
-      const day = `${mo.ym}-${String(d).padStart(2, '0')}`;
-      let c = a.codes?.[d] || leaveDay[day];
-      if (!c && selfMode) {
-        const dn = dayNum(day);
-        if (dn >= Math.max(s, from, dayNum(st.attendance_self_from) ?? -Infinity) && dn <= Math.min(e, dol ?? e) && day < today && new Date(dn * 86400000).getUTCDay() !== 0 && !holidays.has(day)) c = punchDays.has(day) ? 'P' : 'A';
-      }
-      if (c && cnt[c] !== undefined) { cnt[c]++; codes[d] = c; }
+      const day = `${mo.ym}-${String(d).padStart(2, '0')}`, c = dayCode[day];
+      if (c && cnt[c] !== undefined) { cnt[c]++; codes[d] = c; if (autoDay[day]) auto[d] = autoDay[day]; }
     }
 
     let rowStatus = st.status;
@@ -150,7 +178,8 @@ export function computeYear(st, revisions, att, pay, S, recs = []) {
     const gross = rate.gross + rate.night;
     const egross = emp === 0 ? 0 : Math.max(0, round(rate.gross * emp / mo.dim - rate.gross / div * lop + rate.night * emp / mo.dim - rate.night / div * Math.min(N(x.nabs), emp)));
     const sp = salarySplit(egross, S);
-    const otPay = round(gross / div * N(x.ot));
+    const otDays = N(x.ot) + cnt.OT, otHours = N(x.ot_hours) + N(otHoursBy[mo.ym]);
+    const otPay = round(gross / div * otDays * N(S.ot?.dayRate ?? 1) + gross / div / shiftHours(st, S) * otHours * N(S.ot?.hourRate ?? 1));
     const blocked = emp === 0 && (st.status === 'Provisional' || from > e);
     const extras = N(x.arrears) + N(x.bonus) + N(x.incentive) + N(x.other_earn);
     const reimb = blocked ? 0 : N(reimbBy[mo.ym]);
@@ -196,8 +225,8 @@ export function computeYear(st, revisions, att, pay, S, recs = []) {
     const unpaidThis = net <= 0 || status === 'Paid – This Month Only' ? 0 : Math.min(net, closeDue);
 
     out.push({
-      ...mo, rowStatus, emp, cnt, codes, reimb, absd, clOpen, clAdj, clClose: clBal, elOpen, elAdj, elClose: elBal, lop, paid, div,
-      dayRate: rate.gross, nightRate: rate.night, gross, egross, ...sp, otPay, ot: N(x.ot),
+      ...mo, rowStatus, emp, cnt, codes, auto, reimb, absd, clOpen, clAdj, clClose: clBal, elOpen, elAdj, elClose: elBal, lop, paid, div,
+      dayRate: rate.gross, nightRate: rate.night, gross, egross, ...sp, otPay, ot: otDays, otHours,
       arrears: N(x.arrears), arrearsFor: x.arrears_for || '', bonus: N(x.bonus), bonusType: x.bonus_type || '', incentive: N(x.incentive), otherEarn: N(x.other_earn),
       totEarn, eCode, esiApplies, pfWages, esiWages, ceil, pfEE, esiEE, pt, annualGross, tdsCalc, tds,
       advance: N(x.advance), otherDed: N(x.other_ded), loanDed: N(x.loan_ded), ded, net, loanOpen, loanClose: loanBal,
@@ -220,7 +249,8 @@ export function computeYear(st, revisions, att, pay, S, recs = []) {
 /** Compute every employee: returns { [staffId]: months[] } */
 export function computeAll(db) {
   const res = {};
-  for (const st of db.staff) res[st.id] = computeYear(st, db.revisions, db.attendance[st.id] || {}, db.payments[st.id] || {}, db.settings, (db.records || []).filter((r) => r.staff_id === st.id));
+  const rosters = rosterByStaff(db.records || []);
+  for (const st of db.staff) res[st.id] = computeYear(st, db.revisions, db.attendance[st.id] || {}, db.payments[st.id] || {}, db.settings, (db.records || []).filter((r) => r.staff_id === st.id), rosters[st.id] || {});
   return res;
 }
 
@@ -249,3 +279,36 @@ export function pccAlert(st) {
 }
 
 export const isExited = (st) => EXITED.includes(st.status);
+
+// ───────── week-offs, shifts, rosters ─────────
+export const holidaySet = (S) => new Set((S.holidays || []).map((h) => `${Number(h.md.slice(0, 2)) >= 4 ? S.fyStart : S.fyStart + 1}-${h.md}`));
+export const weekOffMode = (st, S) => st.wo_mode || S.weekOff?.mode || 'fixed';
+export const weekOffDays = (st, S) => (st.wo_mode ? st.wo_days : S.weekOff?.days) || [0];
+/** (isoDay) => true when that day is this employee's weekly off. A roster entry for the day always wins. */
+export function offDayFn(st, S, roster = {}) {
+  const mode = weekOffMode(st, S), days = weekOffDays(st, S);
+  return (day) => {
+    if (roster[day]) return roster[day] === 'OFF';
+    if (mode === 'flexible' || mode === 'roster') return false;
+    return days.includes(new Date(day + 'T00:00:00Z').getUTCDay());
+  };
+}
+/** { staffId: { 'YYYY-MM-DD': shiftName | 'OFF' } } from the weekly roster records */
+export function rosterByStaff(records) {
+  const out = {};
+  for (const r of records) if (r.kind === 'roster') for (const [sid, cells] of Object.entries(r.data.cells || {})) Object.assign((out[sid] ||= {}), cells);
+  return out;
+}
+export const shiftOf = (st, S, day, roster = {}) => {
+  const name = roster[day] && roster[day] !== 'OFF' ? roster[day] : st.shift || S.defaultShift;
+  return (S.shifts || []).find((x) => x.name === name) || (S.shifts || [])[0] || { name: 'General', start: '09:00', end: '17:30' };
+};
+const mins = (hm) => { const [h, m] = String(hm || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+export function shiftHours(st, S) {
+  const sh = shiftOf(st, S); let d = mins(sh.end) - mins(sh.start); if (d <= 0) d += 1440;
+  return Math.max(1, d / 60);
+}
+/** Minutes late for a clock-in, beyond the grace period (0 = on time). */
+export const lateBy = (inTime, sh, grace = 0) => Math.max(0, mins(inTime) - mins(sh.start) - grace);
+/** Salary range for a designation, if one is set in Settings. */
+export const rangeFor = (designation, S) => (S.salaryRanges || []).find((r) => r.designation.trim().toLowerCase() === String(designation || '').trim().toLowerCase());

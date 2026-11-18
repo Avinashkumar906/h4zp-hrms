@@ -28,7 +28,7 @@ export default function Home({ db, me, myStaff, results, months, monthIdx, act, 
   const mine = db.records.filter((r) => myStaff && r.staff_id === myStaff.id && ['leave_request', 'expense', 'ticket'].includes(r.kind)).slice(0, 5);
   const pendingLeave = can.edit('leave') ? db.records.filter((r) => r.kind === 'leave_request' && r.data.status === 'Pending' && (r.staff_id !== myStaff?.id || me.role === 'Admin')).length : 0;
   const pendingExp = can.edit('expenses') ? db.records.filter((r) => r.kind === 'expense' && r.data.status === 'Pending' && (r.staff_id !== myStaff?.id || me.role === 'Admin')).length : 0;
-  const pendingAtt = can.edit('attendance') ? db.records.filter((r) => r.kind === 'att_request' && r.data.status === 'Pending').length : 0;
+  const pendingAtt = can.edit('attendance') ? db.records.filter((r) => ['att_request', 'ot_request'].includes(r.kind) && r.data.status === 'Pending').length : 0;
   const newDocs = myStaff ? db.records.filter((r) => r.kind === 'document' && r.staff_id === myStaff.id && r.data.shared !== false && (r.data.date || r.data.uploaded_on || '') >= new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)) : [];
   const openTickets = can.view('helpdesk') ? db.records.filter((r) => r.kind === 'ticket' && r.data.status === 'Open' && r.staff_id !== myStaff?.id).length : 0;
   const bal = R ? leaveBalances(myStaff, R, S, myStaff.status === 'Provisional' ? 0 : S.leave.SL) : null;
@@ -48,7 +48,7 @@ export default function Home({ db, me, myStaff, results, months, monthIdx, act, 
         <div className="hr-head__actions">
           {pendingLeave > 0 && <button className="hr-btn" onClick={() => go('leave')}>{pendingLeave} leave request{pendingLeave > 1 ? 's' : ''} to approve</button>}
           {pendingExp > 0 && <button className="hr-btn" onClick={() => go('expenses')}>{pendingExp} expense claim{pendingExp > 1 ? 's' : ''} to approve</button>}
-          {pendingAtt > 0 && <button className="hr-btn" onClick={() => go('attendance')}>{pendingAtt} attendance correction{pendingAtt > 1 ? 's' : ''} to approve</button>}
+          {pendingAtt > 0 && <button className="hr-btn" onClick={() => go('attendance')}>{pendingAtt} attendance / overtime request{pendingAtt > 1 ? 's' : ''} to approve</button>}
           {openTickets > 0 && <button className="hr-btn" onClick={() => go('helpdesk')}>{openTickets} open helpdesk ticket{openTickets > 1 ? 's' : ''}</button>}
         </div></section>}
 

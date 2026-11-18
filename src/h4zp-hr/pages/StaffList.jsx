@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import logo from '../assets/logo.png';
-import signature from '../assets/signature.png';
+import { logoOf, signOf } from '../lib/brand';
 import { EXITED, ON_ROLL } from '../lib/defaults';
 import { fmtDate, fmtLongDate, todayIso, experienceText } from '../lib/format';
 import { totalExperienceMonths } from '../lib/payroll';
@@ -28,7 +27,7 @@ export default function StaffList({ db }) {
       </div>
       <article className="hr-doc print-area">
         <header className="hr-doc__head">
-          <img src={logo} alt="H4ZP" />
+          <img src={logoOf(S)} alt="H4ZP" />
           <div><h2>{S.org}</h2>{S.address.filter(Boolean).length > 0 && <p>{S.address.filter(Boolean).join(', ')}</p>}</div>
         </header>
         <h3 className="hr-doc__title">{title} — as on {fmtLongDate(date)}</h3>
@@ -40,7 +39,7 @@ export default function StaffList({ db }) {
         <p className="hr-doc__count">Total staff: {rows.length}</p>
         <footer className="hr-doc__sign">
           <div><p>Date: {fmtDate(date)}</p><p>Place: {place || '____________'}</p></div>
-          <figure><img src={signature} alt="Signature of the Chairperson" /><figcaption>Authorised Signatory</figcaption></figure>
+          <figure><img src={signOf(S)} alt="Signature of the Chairperson" /><figcaption>Authorised Signatory</figcaption></figure>
         </footer>
       </article>
     </div>

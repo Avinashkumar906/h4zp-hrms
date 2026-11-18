@@ -32,6 +32,21 @@ function Corrections({ db, me, act, store, dirty }) {
   );
 }
 
+function OvertimeRequests({ db, me, act, store }) {
+  const pending = db.records.filter((x) => x.kind === 'ot_request' && x.data.status === 'Pending');
+  if (!pending.length) return null;
+  const name = (id) => db.directory.find((p) => p.id === id)?.name || '—';
+  const decide = (x, ok) => act((d) => store.saveRecord(d, { ...x, data: { ...x.data, status: ok ? 'Approved' : 'Rejected', decided_by: me.name || me.login } }), ok ? `Overtime approved for ${name(x.staff_id)} — added to salary` : 'Overtime request rejected');
+  return (
+    <section className="hr-panel hr-panel--todo"><h2>Overtime requests ({pending.length})</h2>
+      <div className="hr-table-wrap"><table className="hr-table"><thead><tr><th>Employee</th><th>Date</th><th>Overtime</th><th>Work</th><th /></tr></thead>
+        <tbody>{pending.map((x) => <tr key={x.id}><td>{name(x.staff_id)}</td><td>{x.data.date}</td><td>{x.data.type === 'hours' ? `${x.data.hours} extra hours` : 'Full day on week off / holiday'}</td><td>{x.data.reason}</td>
+          <td className="hr-r"><button className="hr-btn hr-btn--small hr-btn--primary" onClick={() => decide(x, true)}>Approve</button><button className="hr-btn hr-btn--small" onClick={() => decide(x, false)}>Reject</button></td></tr>)}</tbody></table></div>
+      <p className="hr-muted hr-small">A full overtime day pays one extra day’s salary × {db.settings.ot?.dayRate ?? 1}; hours pay the hourly rate × {db.settings.ot?.hourRate ?? 1} (change in Settings). You can also mark OT directly in the grid on any week-off.</p>
+    </section>
+  );
+}
+
 export default function Attendance({ db, me, act, store, results, months, monthIdx, setMonthIdx, notify, manage }) {
   const mo = months[monthIdx];
   const [draft, setDraft] = useState({});
@@ -76,6 +91,7 @@ export default function Attendance({ db, me, act, store, results, months, monthI
         <p className="hr-muted">Pick a code, then click or drag across days. Blank days are paid, so you can mark only absences and leave.</p></div>
         <div className="hr-head__actions"><button className="hr-btn hr-btn--primary" disabled={!dirty.size} onClick={save}>{dirty.size ? `Save ${dirty.size} change${dirty.size > 1 ? 's' : ''}` : 'Saved'}</button></div></header>
       {manage && <Corrections db={db} me={me} act={act} store={store} dirty={dirty.size > 0} />}
+      {manage && <OvertimeRequests db={db} me={me} act={act} store={store} />}
       <MonthRibbon months={months} value={monthIdx} onChange={(i) => { if (dirty.size && !window.confirm('You have unsaved attendance. Leave this month without saving?')) return; setMonthIdx(i); }} results={db.staff.map((s) => results[s.id])} />
       <div className="hr-toolbar">
         <div className="hr-palette" role="radiogroup" aria-label="Attendance code">

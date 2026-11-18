@@ -1,11 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { logoOf, signOf, resizeImage } from '../lib/brand';
 import { Field, Input, Select } from '../components/ui';
 import { DEMO_MODE } from '../lib/supabaseClient';
 
 const pct = (v) => (v === '' ? '' : Math.round(Number(v) * 10000) / 100);
 const unpct = (v) => (v === '' ? 0 : Number(v) / 100);
 
-export default function Settings({ db, act, store }) {
+/** Text box for a list, one item per line; saved when you leave the box. */
+function ListArea({ value, parse, rows = 6, label }) {
+  const [t, setT] = useState(value);
+  useEffect(() => setT(value), [value]);
+  return <textarea className="hr-input" rows={rows} value={t} aria-label={label} onChange={(e) => setT(e.target.value)} onBlur={() => parse(t)} />;
+}
+function ImagePick({ label, url, onPick, onReset, isDefault }) {
+  const ref = useRef(null);
+  return <div className="hr-brandpick"><span className="hr-field__label">{label}</span><div className="hr-brandpick__img"><img src={url} alt={label} /></div>
+    <input ref={ref} type="file" accept="image/png,image/jpeg" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (f) await onPick(f); e.target.value = ''; }} />
+    <div className="hr-head__actions"><button className="hr-btn hr-btn--small" onClick={() => ref.current.click()}>Upload new</button>{!isDefault && <button className="hr-btn hr-btn--small hr-btn--ghost" onClick={onReset}>Use original</button>}</div></div>;
+}
+
+export default function Settings({ db, act, store, notify }) {
   const [S, setS] = useState(db.settings);
   const set = (path) => (v) => { const n = structuredClone(S); const keys = path.split('.'); let o = n; keys.slice(0, -1).forEach((k) => (o = o[k])); o[keys.at(-1)] = v; setS(n); };
   const numSet = (path) => (v) => set(path)(v === '' ? '' : Number(v));
@@ -23,6 +37,52 @@ export default function Settings({ db, act, store }) {
         <Field label="H4ZP HR website address" hint="Sent to staff with their login details."><Input value={S.portalUrl} onChange={set('portalUrl')} /></Field>
         {[0, 1, 2].map((i) => <Field key={i} label={`Address line ${i + 1}`}><Input value={S.address[i]} onChange={(v) => { const a = [...S.address]; a[i] = v; set('address')(a); }} /></Field>)}
       </div></section>
+
+      <section className="hr-panel"><h2>Employee ID</h2><div className="hr-form">
+        <Field label="Prefix" hint="Letters before the number, e.g. H4ZP- or SAA/"><Input value={S.empId.prefix} onChange={(v) => set('empId.prefix')(v.toUpperCase())} /></Field>
+        <Field label="Number of digits"><Input type="number" min="1" max="8" value={S.empId.digits} onChange={numSet('empId.digits')} /></Field>
+        <Field label="Next new employee gets"><Input value={(() => { const used = db.directory.map((p) => p.emp_id).filter((id) => id.toUpperCase().startsWith(String(S.empId.prefix).toUpperCase())); const n = Math.max(0, ...used.map((id) => Number((id.match(/(\d+)$/) || [])[1]) || 0)) + 1; return `${S.empId.prefix}${String(n).padStart(Number(S.empId.digits) || 1, '0')}`.toUpperCase(); })()} disabled /></Field>
+      </div><p className="hr-muted hr-small">Emp IDs are always in capitals. You can still type any Emp ID by hand when adding someone.</p></section>
+
+      <section className="hr-grid hr-grid--two">
+        <div className="hr-panel"><h2>Designations & salary ranges</h2>
+          <ListArea rows={9} label="Designations and salary ranges" value={[...new Set([...(S.designations || []), ...(S.salaryRanges || []).map((r) => r.designation)])].map((d) => { const r = (S.salaryRanges || []).find((x) => x.designation === d); return r ? `${d} | ${r.min} | ${r.max}` : d; }).join('\n')}
+            parse={(t) => { const lines = t.split('\n').map((l) => l.split('|').map((x) => x.trim())).filter((x) => x[0]); const n = structuredClone(S); n.designations = lines.map((x) => x[0]);
+              n.salaryRanges = lines.filter((x) => x.length >= 3 && Number(x[1]) >= 0 && Number(x[2]) > 0).map((x) => ({ designation: x[0], min: Number(x[1]), max: Number(x[2]) })); setS(n); }} />
+          <p className="hr-muted hr-small">One per line: <code>Designation | minimum | maximum</code> monthly gross, e.g. <code>Nurse | 15000 | 22000</code>. The range is optional. These appear as suggestions on staff records, and a salary outside the range is flagged.</p></div>
+        <div className="hr-panel"><h2>Employment types</h2>
+          <ListArea rows={9} label="Employment types" value={(S.employmentTypes || []).join('\n')} parse={(t) => set('employmentTypes')(t.split('\n').map((x) => x.trim()).filter(Boolean))} />
+          <p className="hr-muted hr-small">One per line.</p></div>
+      </section>
+
+      <section className="hr-panel"><h2>Shifts, time & weekly off</h2>
+        <div className="hr-grid hr-grid--two">
+          <div><span className="hr-field__label">Shifts — one per line: Name | start | end</span>
+            <ListArea rows={6} label="Shifts" value={(S.shifts || []).map((x) => `${x.name} | ${x.start} | ${x.end}`).join('\n')}
+              parse={(t) => { const sh = t.split('\n').map((l) => l.split('|').map((x) => x.trim())).filter((x) => x[0] && /^\d{1,2}:\d{2}$/.test(x[1] || '') && /^\d{1,2}:\d{2}$/.test(x[2] || '')).map(([name, start, end]) => ({ name, start: start.padStart(5, '0'), end: end.padStart(5, '0') }));
+                if (!sh.length) { notify('Add at least one shift, e.g. General | 09:00 | 17:30', 'bad'); return; } const n = structuredClone(S); n.shifts = sh; if (!sh.some((x) => x.name === n.defaultShift)) n.defaultShift = sh[0].name; setS(n); }} />
+            <p className="hr-muted hr-small">24-hour times. A night shift may end the next morning (e.g. Night | 21:00 | 09:00).</p></div>
+          <div className="hr-form hr-form--one">
+            <Field label="Usual shift for everyone"><Select value={S.defaultShift} onChange={set('defaultShift')} options={(S.shifts || []).map((x) => x.name)} /></Field>
+            <Field label="Late after (minutes past shift start)"><Input type="number" min="0" value={S.graceMins} onChange={numSet('graceMins')} /></Field>
+            <Field label="Weekly off — Trust default" hint={{ fixed: 'The same day(s) off every week.', flexible: 'Any one day a week: the first absence in a week becomes the week off; more absences use CL, then EL, then become unpaid.', roster: 'Off days come from the weekly roster.' }[S.weekOff.mode]}>
+              <Select value={S.weekOff.mode} onChange={set('weekOff.mode')} options={[{ value: 'fixed', label: 'Fixed day(s)' }, { value: 'flexible', label: 'Flexible — any 1 day a week' }, { value: 'roster', label: 'As per roster' }]} /></Field>
+            {S.weekOff.mode === 'fixed' && <Field label="Off on"><div className="hr-days">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <label key={d}><input type="checkbox" checked={S.weekOff.days.includes(i)} onChange={(e) => set('weekOff.days')(e.target.checked ? [...S.weekOff.days, i].sort() : S.weekOff.days.filter((x) => x !== i))} />{d}</label>)}</div></Field>}
+          </div></div>
+        <p className="hr-muted hr-small">Each employee can have their own shift and weekly off on their staff record; the roster can change any single day.</p>
+      </section>
+
+      <section className="hr-panel"><h2>Overtime</h2><div className="hr-form">
+        <Field label="Overtime day pays (× one day’s salary)" hint="1 = one extra day’s pay. 2 = double."><Input type="number" min="0" step="0.25" value={S.ot.dayRate} onChange={numSet('ot.dayRate')} /></Field>
+        <Field label="Overtime hour pays (× hourly rate)" hint="Hourly rate = day’s salary ÷ shift hours."><Input type="number" min="0" step="0.25" value={S.ot.hourRate} onChange={numSet('ot.hourRate')} /></Field>
+      </div></section>
+
+      <section className="hr-panel"><h2>Branding</h2><div className="hr-brand-grid">
+        <ImagePick label="Logo (letters, payslips, staff list, sign-in)" url={logoOf(S)} isDefault={!S.brand.logo} onReset={() => set('brand.logo')('')}
+          onPick={async (f) => { try { set('brand.logo')(await resizeImage(f, 400, 'image/png')); } catch (e) { notify(e.message, 'bad'); } }} />
+        <ImagePick label="Signature (letters and staff list)" url={signOf(S)} isDefault={!S.brand.signature} onReset={() => set('brand.signature')('')}
+          onPick={async (f) => { try { set('brand.signature')(await resizeImage(f, 700, 'image/png')); } catch (e) { notify(e.message, 'bad'); } }} />
+      </div><p className="hr-muted hr-small">Use PNG with a transparent or white background. Press Save settings afterwards.</p></section>
 
       <section className="hr-panel"><h2>Salary split from gross</h2><div className="hr-form">
         <Field label="Basic (% of gross)"><Input type="number" value={pct(S.basicPct)} onChange={pctSet('basicPct')} /></Field>

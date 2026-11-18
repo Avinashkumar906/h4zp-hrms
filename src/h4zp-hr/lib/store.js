@@ -125,7 +125,9 @@ export async function saveSettings(db, settings) {
   if (DEMO_MODE) return demoWrite(db.me, (r) => ({ ...r, settings }));
   fail(await supabase.from('hrms_settings').upsert({ id: 1, data: settings })); return { ...db, settings };
 }
-export async function saveStaff(db, st) {
+export async function saveStaff(db, st0) {
+  const st = { ...st0, emp_id: String(st0.emp_id || '').trim().toUpperCase() };
+  if (!st.emp_id) throw new Error('Emp ID is required.');
   const dup = db.directory.find((x) => x.emp_id.trim().toLowerCase() === st.emp_id.trim().toLowerCase() && x.id !== st.id);
   if (dup) throw new Error(`Emp ID ${st.emp_id} is already used by ${dup.name}.`);
   const { id, ...data } = st;

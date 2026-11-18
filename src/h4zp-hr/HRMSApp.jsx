@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './hrms.css';
-import logo from './assets/logo.png';
+import { logoOf, photoOf } from './lib/brand';
+import { Avatar } from './components/ui';
 import { DEMO_MODE } from './lib/supabaseClient';
 import * as store from './lib/store';
 import { canView, canEdit } from './lib/permissions';
@@ -23,6 +24,7 @@ import { Assets, Helpdesk, Performance, Hiring, Announcements } from './pages/Co
 import DocCenter from './pages/DocCenter';
 import MyDocuments from './pages/MyDocuments';
 import MyAttendance from './pages/MyAttendance';
+import Roster from './pages/Roster';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Users from './pages/Users';
@@ -49,6 +51,7 @@ const NAV = [
     ['staff', 'Staff records', Staff, 'staff'],
     ['documents', 'Documents & letters', DocCenter, 'documents'],
     ['attendance', 'Attendance', Attendance, 'attendance'],
+    ['roster', 'Roster & shifts', Roster, 'attendance'],
     ['timelog', 'Clock-in log', TimeLog, 'attendance'],
     ['hiring', 'Hiring', Hiring, 'hiring'],
     ['assets', 'Assets', Assets, 'assets'],
@@ -66,7 +69,7 @@ const NAV = [
     ['users', 'Users & permissions', Users, 'users'],
   ]],
 ];
-const MODULE_OF = { leave: 'leave', expenses: 'expenses', helpdesk: 'helpdesk', goals: 'performance', timelog: 'attendance', announcements: 'announcements', staff: 'staff', documents: 'documents', attendance: 'attendance', hiring: 'hiring', assets: 'assets', payroll: 'payroll', payslips: 'payroll', payments: 'payroll', statement: 'payroll', settings: 'settings', users: 'users', dashboard: 'staff', stafflist: 'staff', reports: 'reports' };
+const MODULE_OF = { roster: 'attendance', leave: 'leave', expenses: 'expenses', helpdesk: 'helpdesk', goals: 'performance', timelog: 'attendance', announcements: 'announcements', staff: 'staff', documents: 'documents', attendance: 'attendance', hiring: 'hiring', assets: 'assets', payroll: 'payroll', payslips: 'payroll', payments: 'payroll', statement: 'payroll', settings: 'settings', users: 'users', dashboard: 'staff', stafflist: 'staff', reports: 'reports' };
 
 export default function HRMSApp() {
   const [user, setUser] = useState(undefined);
@@ -116,7 +119,7 @@ export default function HRMSApp() {
     <div className="hrms">
       <aside className={'hr-side' + (menuOpen ? ' is-open' : '')}>
         <div className="hr-brand">
-          <img src={logo} alt="H4ZP stamp" />
+          <img src={logoOf(db.settings)} alt="H4ZP stamp" />
           <div><strong>H4ZP HR</strong><span>FY {db.settings.fyStart}-{String(db.settings.fyStart + 1).slice(2)}</span></div>
         </div>
         <nav className="hr-nav">
@@ -126,8 +129,8 @@ export default function HRMSApp() {
             </div>))}
         </nav>
         <div className="hr-side__foot">
-          <span title={me.login}><b>{me.name || me.login}</b> · {me.role}</span>
-          <div><button className="hr-link" onClick={() => { setPage('account'); setMenuOpen(false); }}>Change password</button> · <button className="hr-link" onClick={async () => { await store.signOut(); setUser(null); setDb(null); setPage('home'); }}>Sign out</button></div>
+          <div className="hr-side__me"><Avatar url={myStaff ? photoOf(db, myStaff.id) : ''} name={me.name || me.login} size={34} /><span title={me.login}><b>{me.name || me.login}</b> · {me.role}</span></div>
+          <div><button className="hr-link" onClick={() => { setPage('account'); setMenuOpen(false); }}>My profile & password</button> · <button className="hr-link" onClick={async () => { await store.signOut(); setUser(null); setDb(null); setPage('home'); }}>Sign out</button></div>
         </div>
       </aside>
       <main className="hr-main">

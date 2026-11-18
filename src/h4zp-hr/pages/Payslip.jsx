@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import logo from '../assets/logo.png';
+import { logoOf } from '../lib/brand';
 import { inr, num, fmtDate, ymLabel, rupeesInWords } from '../lib/format';
 import { Select } from '../components/ui';
 
@@ -33,7 +33,7 @@ export default function Payslip({ db, results, months, monthIdx, setMonthIdx, se
               <p className="hr-slip__org">{S.org.toUpperCase()}</p>
               {S.address.filter(Boolean).map((a, i) => <p key={i} className="hr-slip__addr">{a.toUpperCase()}</p>)}
             </div>
-            <img src={logo} alt="H4ZP" className="hr-slip__logo" />
+            <img src={logoOf(S)} alt="H4ZP" className="hr-slip__logo" />
           </header>
           <h2 className="hr-slip__name">{s.name.toUpperCase()}</h2>
           <div className="hr-slip__grid">

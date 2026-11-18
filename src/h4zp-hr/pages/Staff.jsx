@@ -1,9 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { EMPTY_STAFF, STATUSES, PCC_STATUSES, PAY_MODES, EMP_TYPES, EXITED } from '../lib/defaults';
 import { inr, fmtDate, fmtLongDate, todayIso, experienceText } from '../lib/format';
-import { salarySplit, totalExperienceMonths, pccAlert, rateOn, annualTax } from '../lib/payroll';
+import { salarySplit, totalExperienceMonths, pccAlert, rateOn, annualTax, rangeFor, weekOffMode } from '../lib/payroll';
+import { photoOf, photoRec, squarePhoto, savePhoto } from '../lib/brand';
+import { Avatar } from '../components/ui';
 import { Field, Input, Select, Modal, Badge, statusTone, Empty } from '../components/ui';
 import { CredentialsDialog } from '../components/Credentials';
+import { ImportDialog, exportStaff } from '../components/BulkImport';
 import { loginFromEmpId } from '../lib/store';
 
 const YN = ['Y', 'N'];
@@ -26,6 +29,19 @@ function SalaryPreview({ s, S }) {
       <div><span>TDS / month</span><b>{inr(tds)}</b></div><div className="hr-preview__net"><span>Take-home (full month)</span><b>{inr(net)}</b></div>
     </div>
   );
+}
+
+export function nextEmpId(db, extra = []) {
+  const { prefix = 'H4ZP-', digits = 3 } = db.settings.empId || {};
+  const used = [...db.directory.map((s) => s.emp_id), ...extra].filter((id) => id.toUpperCase().startsWith(prefix.toUpperCase()));
+  const n = Math.max(0, ...used.map((id) => Number((id.match(/(\d+)$/) || [])[1]) || 0)) + 1;
+  return `${prefix}${String(n).padStart(digits, '0')}`.toUpperCase();
+}
+function PhotoButton({ db, act, store, notify, staffId }) {
+  const ref = useRef(null);
+  const pick = async (e) => { const f = e.target.files?.[0]; if (!f) return; try { const url = await squarePhoto(f); await act((d) => savePhoto(store, d, staffId, url), 'Photo updated'); } catch (x) { notify(x.message, 'bad'); } e.target.value = ''; };
+  return <div><input ref={ref} type="file" accept="image/*" hidden onChange={pick} /><button type="button" className="hr-btn hr-btn--small" onClick={() => ref.current.click()}>{photoOf(db, staffId) ? 'Change photo' : 'Add photo'}</button>
+    {photoRec(db, staffId) && <button type="button" className="hr-btn hr-btn--small hr-btn--ghost" onClick={() => act((d) => store.deleteRecord(d, photoRec(d, staffId).id), 'Photo removed')}>Remove</button>}</div>;
 }
 
 /** Save a staff record and keep their login in step: create it (user ID = Emp ID), switch it on or off. */
@@ -66,15 +82,19 @@ function StaffForm({ initial, db, act, store, onClose, notify, canUsers, onCreds
       footer={<><button className="hr-btn" onClick={onClose}>Cancel</button><button className="hr-btn hr-btn--primary" onClick={save}>Save staff</button></>}>
       <div className="hr-tabs" role="tablist">{tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'is-on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       {tab === 'job' && <div className="hr-form">
-        <Field label="Emp ID"><Input value={s.emp_id} onChange={set('emp_id')} placeholder="H4ZP-016" /></Field>
+        <Field label="Emp ID" hint="Suggested automatically; you can type your own. Always saved in capitals."><Input value={s.emp_id} onChange={(v) => set('emp_id')(v.toUpperCase())} placeholder="H4ZP-016" /></Field>
         <Field label="Full name"><Input value={s.name} onChange={set('name')} /></Field>
-        <Field label="Designation"><Input value={s.designation} onChange={set('designation')} /></Field>
+        <Field label="Designation"><Input value={s.designation} onChange={set('designation')} list="hr-designations" /><datalist id="hr-designations">{[...new Set([...(S.designations || []), ...(S.salaryRanges || []).map((r) => r.designation)])].map((d) => <option key={d} value={d} />)}</datalist></Field>
         <Field label="Department"><Select value={s.department} onChange={set('department')} options={S.departments} placeholder="Choose…" /></Field>
         <Field label="Sub department"><Input value={s.sub_department} onChange={set('sub_department')} /></Field>
         <Field label="Business unit"><Input value={s.business_unit} onChange={set('business_unit')} /></Field>
         <Field label="Attendance marked by" hint={s.attendance_mode === 'self' ? `From ${fmtDate(s.attendance_self_from || todayIso())}, past working days with no clock-in, leave or HR mark count as Absent.` : 'Blank days count as present unless HR marks otherwise.'}><Select value={s.attendance_mode || 'hr'} onChange={(v) => setS({ ...s, attendance_mode: v, attendance_self_from: v === 'self' ? (s.attendance_mode === 'self' && s.attendance_self_from ? s.attendance_self_from : todayIso()) : '' })} options={[{ value: 'hr', label: 'HR (attendance grid)' }, { value: 'self', label: 'Employee — clocks in daily' }]} /></Field>
         <Field label="Reports to"><Select value={s.reports_to} onChange={set('reports_to')} options={db.directory.filter((p) => p.id !== s.id).map((p) => ({ value: p.id, label: `${p.name} — ${p.designation}` }))} placeholder="No one (top of the chart)" /></Field>
-        <Field label="Employment type"><Select value={s.employment_type} onChange={set('employment_type')} options={EMP_TYPES} placeholder="—" /></Field>
+        <Field label="Employment type"><Select value={s.employment_type} onChange={set('employment_type')} options={S.employmentTypes || EMP_TYPES} placeholder="—" /></Field>
+        <Field label="Shift"><Select value={s.shift} onChange={set('shift')} options={(S.shifts || []).map((x) => ({ value: x.name, label: `${x.name} (${x.start}–${x.end})` }))} placeholder={`Default — ${S.defaultShift}`} /></Field>
+        <Field label="Weekly off" hint={{ flexible: 'One day off a week, any day: the first absence in a week becomes the week off; more absences use leave, then become unpaid.', roster: 'Off days come from the weekly roster.', fixed: 'The same day(s) off every week.' }[s.wo_mode || S.weekOff.mode]}>
+          <Select value={s.wo_mode} onChange={(v) => setS({ ...s, wo_mode: v, wo_days: v === 'fixed' ? (s.wo_days && s.wo_days.length ? s.wo_days : [0]) : [] })} options={[{ value: 'fixed', label: 'Fixed day(s)' }, { value: 'flexible', label: 'Flexible — any 1 day a week' }, { value: 'roster', label: 'As per roster' }]} placeholder={`Trust default (${{ fixed: 'fixed', flexible: 'flexible', roster: 'roster' }[S.weekOff.mode]})`} /></Field>
+        {s.wo_mode === 'fixed' && <Field label="Off on"><div className="hr-days">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <label key={d}><input type="checkbox" checked={(s.wo_days || []).includes(i)} onChange={(e) => set('wo_days')(e.target.checked ? [...(s.wo_days || []), i].sort() : (s.wo_days || []).filter((x) => x !== i))} />{d}</label>)}</div></Field>}
         <Field label="Status" hint={s.status === 'Provisional' ? 'Provisional: no salary, attendance or leave until confirmed.' : undefined}><Select value={s.status} onChange={(v) => { setS({ ...s, status: v }); if (EXITED.includes(v)) setAllow(false); }} options={STATUSES} /></Field>
         <div className="hr-login-box hr-field--wide">
           {canUsers ? <>
@@ -95,7 +115,7 @@ function StaffForm({ initial, db, act, store, onClose, notify, canUsers, onCreds
       </div>}
       {tab === 'salary' && <div className="hr-split">
         <div className="hr-form">
-          <Field label="Monthly gross (₹)" hint="Everything else is calculated from this."><Input type="number" min="0" value={s.gross} onChange={set('gross')} /></Field>
+          <Field label="Monthly gross (₹)" hint={(() => { const r = rangeFor(s.designation, S); const g = Number(s.gross) || 0; return r ? `Range for ${r.designation}: ₹${r.min.toLocaleString('en-IN')} – ₹${r.max.toLocaleString('en-IN')}${g && (g < r.min || g > r.max) ? ' — ⚠ this salary is outside the range' : ''}` : 'Everything else is calculated from this.'; })()}><Input type="number" min="0" value={s.gross} onChange={set('gross')} /></Field>
           <Field label="Effective from"><Input type="date" value={s.salary_effective} onChange={set('salary_effective')} /></Field>
           <Field label="Night salary (₹/month)"><Input type="number" min="0" value={s.night_salary} onChange={set('night_salary')} /></Field>
           <Field label="Deduct PF?"><Select value={s.deduct_pf} onChange={set('deduct_pf')} options={YN} /></Field>
@@ -133,6 +153,7 @@ function StaffForm({ initial, db, act, store, onClose, notify, canUsers, onCreds
         </div>
       </div>}
       {tab === 'personal' && <div className="hr-form">
+        {s.id && <div className="hr-field--wide hr-photo-edit"><Avatar url={photoOf(db, s.id)} name={s.name} size={72} /><PhotoButton db={db} act={act} store={store} notify={notify} staffId={s.id} /></div>}
         <Field label="Gender"><Select value={s.gender} onChange={set('gender')} options={['Female', 'Male', 'Other']} placeholder="—" /></Field>
         <Field label="Date of birth"><Input type="date" value={s.dob} onChange={set('dob')} /></Field>
         <Field label="Mobile"><Input value={s.mobile} onChange={set('mobile')} /></Field>
@@ -216,30 +237,85 @@ export default function Staff({ db, act, store, notify, manage, can }) {
   const [filter, setFilter] = useState('current');
   const [edit, setEdit] = useState(null);
   const [confirmSt, setConfirmSt] = useState(null);
+  const [sel, setSel] = useState(new Set());
+  const [importing, setImporting] = useState(false);
+  const [bf, setBf] = useState({ field: 'status', value: '' });
+  const S = db.settings;
+  const BULK_FIELDS = {
+    status: ['Status', STATUSES], department: ['Department', S.departments], designation: ['Designation', [...new Set([...(S.designations || []), ...db.staff.map((x) => x.designation).filter(Boolean)])]],
+    employment_type: ['Employment type', S.employmentTypes || EMP_TYPES], shift: ['Shift', (S.shifts || []).map((x) => x.name)],
+    wo_mode: ['Weekly off', [{ value: '', label: 'Trust default' }, { value: 'fixed', label: 'Fixed day(s)' }, { value: 'flexible', label: 'Flexible — 1 day a week' }, { value: 'roster', label: 'As per roster' }]],
+    attendance_mode: ['Attendance by', [{ value: 'hr', label: 'HR' }, { value: 'self', label: 'Employee clocks in' }]],
+    reports_to: ['Reports to', db.directory.map((p) => ({ value: p.id, label: p.name }))], payment_mode: ['Payment mode', PAY_MODES],
+    deduct_pf: ['Deduct PF', ['Y', 'N']], deduct_esi: ['Deduct ESI', ['Auto', 'Y', 'N']], pcc_status: ['PCC status', PCC_STATUSES],
+  };
+  const selected = db.staff.filter((x) => sel.has(x.id));
+  const toggle = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const bulkSet = async () => {
+    const { field, value } = bf; const label = BULK_FIELDS[field][0];
+    if (!window.confirm(`Set ${label} for ${selected.length} staff?`)) return;
+    const today = todayIso();
+    await act(async (d) => {
+      let n = d;
+      for (const st of selected) {
+        const next = { ...st, [field]: value };
+        if (field === 'attendance_mode') next.attendance_self_from = value === 'self' ? (st.attendance_mode === 'self' ? st.attendance_self_from : today) : '';
+        if (field === 'wo_mode' && value === 'fixed' && !(st.wo_days || []).length) next.wo_days = [0];
+        const u = n.users.find((x) => x.staff_id === st.id);
+        n = field === 'status' && EXITED.includes(value) && u ? await saveWithLogin(n, store, next, false, canUsers, {}) : await store.saveStaff(n, next);
+      }
+      return n;
+    }, `${label} updated for ${selected.length} staff`);
+  };
+  const bulkLogins = async (on) => {
+    const out = [], errs = [];
+    await act(async (d) => { let n = d; for (const st of selected) { try { const u = n.users.find((x) => x.staff_id === st.id);
+      if (u) { if (u.active !== on) n = await store.updateUser(n, { ...u, active: on }); } else if (on) { const r = await store.createLoginFor(n, st); n = r.db; out.push(r.cred); } } catch (x) { errs.push(`${st.name}: ${x.message}`); } } return n; },
+      on ? null : `Logins switched off for ${selected.length} staff`);
+    if (out.length) setCreds({ items: out, note: errs.join('; ') }); else if (errs.length) notify(errs[0], 'bad'); else if (on) notify('Logins switched on');
+  };
+  const bulkDelete = async () => {
+    const typed = window.prompt(`Delete ${selected.length} staff and ALL their attendance, salary, leave and document records?\nThis cannot be undone. For people who left, change their Status instead.\n\nType DELETE to confirm.`);
+    if (typed !== 'DELETE') return;
+    await act(async (d) => { let n = d; for (const st of selected) n = await store.deleteStaff(n, st.id); return n; }, `${selected.length} staff deleted`);
+    setSel(new Set());
+  };
   const rows = useMemo(() => db.staff.filter((s) => {
     if (filter === 'current' && EXITED.includes(s.status)) return false;
     if (filter === 'provisional' && s.status !== 'Provisional') return false;
     if (filter === 'exited' && !EXITED.includes(s.status)) return false;
     const t = q.toLowerCase(); return !t || [s.emp_id, s.name, s.designation, s.department].join(' ').toLowerCase().includes(t);
   }), [db.staff, q, filter]);
-  const nextId = () => { const n = Math.max(0, ...db.directory.map((s) => Number((s.emp_id.match(/(\d+)$/) || [])[1]) || 0)) + 1; return `H4ZP-${String(n).padStart(3, '0')}`; };
+  const nextId = () => nextEmpId(db);
 
   return (
     <div className="hr-page">
       <header className="hr-head"><div><h1>Staff</h1><p className="hr-muted">{db.staff.length} people on record. Never delete someone who left — set their status and leaving date.</p></div>
         <div className="hr-head__actions">{canUsers && without.length > 0 && <button className="hr-btn" onClick={bulk}>Create logins for {without.length} staff</button>}
+          <button className="hr-btn" onClick={() => exportStaff(rows, db)}>Export (Excel)</button>
+          {manage && <button className="hr-btn" onClick={() => setImporting(true)}>Bulk add / update</button>}
           {manage && <button className="hr-btn hr-btn--primary" onClick={() => setEdit({ ...EMPTY_STAFF, emp_id: nextId() })}>Add staff</button>}</div></header>
+      {manage && selected.length > 0 && <div className="hr-bulkbar" role="region" aria-label="Bulk actions">
+        <b>{selected.length} selected</b>
+        <select className="hr-input" value={bf.field} onChange={(e) => setBf({ field: e.target.value, value: '' })} aria-label="Field to change">{Object.entries(BULK_FIELDS).map(([k, [l]]) => <option key={k} value={k}>Set {l}</option>)}</select>
+        <Select value={bf.value} onChange={(v) => setBf({ ...bf, value: v })} options={BULK_FIELDS[bf.field][1]} placeholder="Choose…" aria-label="New value" />
+        <button className="hr-btn" disabled={bf.value === '' && !['wo_mode'].includes(bf.field)} onClick={bulkSet}>Apply</button>
+        {canUsers && <><button className="hr-btn" onClick={() => bulkLogins(true)}>Logins on</button><button className="hr-btn" onClick={() => bulkLogins(false)}>Logins off</button></>}
+        <button className="hr-btn" onClick={() => exportStaff(selected, db)}>Export</button>
+        <button className="hr-btn hr-btn--ghost" onClick={bulkDelete}>Delete</button>
+        <button className="hr-link" style={{ color: '#fff' }} onClick={() => setSel(new Set())}>Clear</button>
+      </div>}
       <div className="hr-toolbar">
         <input className="hr-input hr-input--search" placeholder="Search name, ID, designation…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search staff" />
         <div className="hr-seg">{[['current', 'Current'], ['provisional', 'Provisional'], ['exited', 'Exited'], ['all', 'All']].map(([k, l]) => <button key={k} className={filter === k ? 'is-on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
       </div>
       {rows.length === 0 ? <Empty title="No staff match">Change the filter or add a new person.</Empty> : (
         <div className="hr-table-wrap"><table className="hr-table">
-          <thead><tr><th>Emp ID</th><th>Name</th><th>Designation</th><th>Department</th><th>Status</th><th>Joined</th><th>Experience</th><th className="hr-r">Gross</th><th>PCC</th>{seeUsers && <th>Login</th>}<th /></tr></thead>
+          <thead><tr>{manage && <th className="hr-chk"><input type="checkbox" aria-label="Select all shown" checked={rows.length > 0 && rows.every((x) => sel.has(x.id))} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((x) => x.id)) : new Set())} /></th>}<th>Emp ID</th><th>Name</th><th>Designation</th><th>Department</th><th>Status</th><th>Joined</th><th>Experience</th><th className="hr-r">Gross</th><th>PCC</th>{seeUsers && <th>Login</th>}<th /></tr></thead>
           <tbody>{rows.map((s) => { const p = pccAlert(s); const u = seeUsers ? userOf(s.id) : null; return (
-            <tr key={s.id}>
+            <tr key={s.id} className={sel.has(s.id) ? 'is-cur' : ''}>{manage && <td className="hr-chk"><input type="checkbox" aria-label={`Select ${s.name}`} checked={sel.has(s.id)} onChange={() => toggle(s.id)} /></td>}
               <td className="hr-mono">{s.emp_id}</td><td><button className="hr-link" onClick={() => setEdit(s)}>{s.name}</button></td><td>{s.designation}</td><td>{s.department}</td>
-              <td><Badge tone={statusTone(s.status)}>{s.status}</Badge></td><td>{fmtDate(s.confirm_date && s.confirm_date > (s.doj || '') ? s.confirm_date : s.doj)}</td>
+              <td><Badge tone={statusTone(s.status)}>{s.status}</Badge></td><td style={{ whiteSpace: 'nowrap' }}>{fmtDate(s.confirm_date && s.confirm_date > (s.doj || '') ? s.confirm_date : s.doj)}</td>
               <td>{experienceText(totalExperienceMonths(s))}</td><td className="hr-r">{s.status === 'Provisional' ? <span className="hr-muted">—</span> : Number(s.gross) > 0 ? inr(s.gross) : <Badge tone="bad">add salary</Badge>}</td>
               <td><Badge tone={{ ok: 'ok', warn: 'warn', bad: 'bad' }[p.level]}>{p.text}</Badge></td>
               {seeUsers && <td>{u ? <><span className="hr-mono">{u.login}</span> <Badge tone={u.active ? (u.must_change ? 'warn' : 'ok') : 'mute'}>{u.active ? (u.must_change ? 'not signed in yet' : 'active') : 'off'}</Badge></> : <span className="hr-muted">No login</span>}</td>}
@@ -252,6 +328,7 @@ export default function Staff({ db, act, store, notify, manage, can }) {
       {edit && <StaffForm initial={edit} db={db} act={act} store={store} notify={notify} canUsers={canUsers} onCreds={setCreds} onClose={() => setEdit(null)} />}
       {confirmSt && <ConfirmDialog st={confirmSt} db={db} act={act} store={store} notify={notify} canUsers={canUsers} onCreds={setCreds} onClose={() => setConfirmSt(null)} />}
       {creds && <CredentialsDialog {...creds} settings={db.settings} onClose={() => setCreds(null)} />}
+      {importing && <ImportDialog db={db} act={act} store={store} canUsers={canUsers} onCreds={setCreds} nextId={(extra) => nextEmpId(db, extra)} onClose={() => setImporting(false)} />}
     </div>
   );
 }

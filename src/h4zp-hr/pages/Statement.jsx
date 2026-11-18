@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import logo from '../assets/logo.png';
+import { logoOf } from '../lib/brand';
 import { inr, days, fmtDate, ymLabel, experienceText } from '../lib/format';
 import { monthStarted, totalExperienceMonths, pccAlert, rateOn } from '../lib/payroll';
 import { Select, Badge, payTone, Stat, statusTone } from '../components/ui';
@@ -18,7 +18,7 @@ export default function Statement({ db, results, months }) {
         <div className="hr-head__actions"><Select value={sid} onChange={setSid} options={db.staff.map((x) => ({ value: x.id, label: `${x.emp_id} | ${x.name}` }))} aria-label="Employee" />
           <button className="hr-btn hr-btn--primary" onClick={() => window.print()}>Print</button></div></header>
       <div className="print-area print-landscape">
-        <div className="hr-print-head"><img src={logo} alt="" /><div><h2>{s.name}</h2><p>{s.emp_id} · {s.designation} · {s.department}</p></div><Badge tone={statusTone(s.status)}>{s.status}</Badge></div>
+        <div className="hr-print-head"><img src={logoOf(db.settings)} alt="" /><div><h2>{s.name}</h2><p>{s.emp_id} · {s.designation} · {s.department}</p></div><Badge tone={statusTone(s.status)}>{s.status}</Badge></div>
         <dl className="hr-dl">
           {[['Joined', fmtDate(s.doj)], ['Confirmed from', s.confirm_date ? fmtDate(s.confirm_date) : '—'], ['Left', s.dol ? fmtDate(s.dol) : '—'], ['Experience', experienceText(totalExperienceMonths(s))],
             ['Qualification', s.qualification || '—'], ['Current gross', inr(rateOn(s, db.revisions, new Date().toISOString().slice(0, 10)).gross)], ['Bank A/c', s.bank_ac || '—'], ['PCC', pccAlert(s).text]].map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}

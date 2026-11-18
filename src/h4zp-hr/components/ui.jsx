@@ -61,3 +61,10 @@ export const Empty = ({ title, children }) => <div className="hr-empty"><p class
 export function Stat({ label, value, tone, note }) {
   return <div className={'hr-stat' + (tone ? ` hr-stat--${tone}` : '')}><span className="hr-stat__label">{label}</span><span className="hr-stat__value">{value}</span>{note && <span className="hr-stat__note">{note}</span>}</div>;
 }
+
+/** Profile photo, or initials when there is none. */
+export function Avatar({ url, name = '', size = 38 }) {
+  const initials = name.replace(/^(Dr|Mr|Ms|Mrs)\.?\s+/i, '').split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  return url ? <img className="hr-avatar hr-avatar--img" src={url} alt={name} style={{ width: size, height: size }} />
+    : <span className="hr-avatar" style={{ width: size, height: size, fontSize: Math.round(size / 3) }} aria-hidden="true">{initials}</span>;
+}

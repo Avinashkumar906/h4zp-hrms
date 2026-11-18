@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { inr, ymLabel, fmtLongDate, todayIso } from '../lib/format';
 import { ON_ROLL, EXITED, PCC_STATUSES } from '../lib/defaults';
-import { monthStarted, pccAlert, salarySplit } from '../lib/payroll';
+import { monthStarted, pccAlert, salarySplit, rangeFor } from '../lib/payroll';
 import { MonthRibbon, Stat, Badge } from '../components/ui';
 
 const sum = (arr, f) => arr.reduce((t, x) => t + (f(x) || 0), 0);
@@ -53,6 +53,7 @@ export default function Dashboard({ db, results, months, monthIdx, setMonthIdx, 
   for (const s of staff) {
     if (EXITED.includes(s.status)) continue;
     if (s.status !== 'Provisional' && !(Number(s.gross) > 0)) attention.push([s, 'Salary not entered']);
+    { const rg = rangeFor(s.designation, db.settings), g = Number(s.gross) || 0; if (rg && g && (g < rg.min || g > rg.max)) attention.push([s, `Salary outside ${rg.designation} range`]); }
     const a = pccAlert(s); if (a.level !== 'ok') attention.push([s, a.text]);
   }
   const monthlyCTC = sum(staff.filter((s) => ON_ROLL.includes(s.status) && !s.dol), (s) => {

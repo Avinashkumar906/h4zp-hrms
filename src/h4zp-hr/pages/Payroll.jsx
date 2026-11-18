@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PAY_STATUSES, PAY_MODES } from '../lib/defaults';
 import { inr, days, ymLabel } from '../lib/format';
 import { MonthRibbon, Badge, payTone, Empty } from '../components/ui';
-import logo from '../assets/logo.png';
+import { logoOf } from '../lib/brand';
 
 export default function Payroll({ db, act, store, results, months, monthIdx, setMonthIdx, go }) {
   const mo = months[monthIdx];
@@ -38,7 +38,7 @@ export default function Payroll({ db, act, store, results, months, monthIdx, set
       <div className="no-print"><MonthRibbon months={months} value={monthIdx} onChange={(i) => { if (dirty.size && !window.confirm('Leave without saving payments?')) return; setMonthIdx(i); }} results={db.staff.map((s) => results[s.id])} /></div>
       {rows.length === 0 ? <Empty title={`No one is on payroll in ${ymLabel(mo.ym, true)}`}>Provisional staff appear here once you confirm them on the Staff page.</Empty> : (
         <div className="print-area print-landscape">
-          <div className="print-only hr-print-head"><img src={logo} alt="" /><div><h2>{db.settings.org}</h2><p>Salary register — {ymLabel(mo.ym, true)}</p></div></div>
+          <div className="print-only hr-print-head"><img src={logoOf(db.settings)} alt="" /><div><h2>{db.settings.org}</h2><p>Salary register — {ymLabel(mo.ym, true)}</p></div></div>
           <div className="hr-table-wrap"><table className="hr-table hr-table--num hr-table--dense">
             <thead><tr><th>S.No.</th><th className="hr-l">Name</th><th>Paid days</th><th>LOP</th><th>Fixed salary</th><th>Earned</th><th>OT + extras</th><th>Total earnings</th><th>PF</th><th>ESI</th><th>TDS</th><th>Other ded.</th><th>Net payable</th><th>Brought fwd</th><th>Total payable</th><th className="hr-l">Status</th><th>Partial</th><th>Paid</th><th>Due (c/f)</th><th className="hr-l no-print">Date · mode · UTR</th><th className="hr-l">This month's salary</th><th className="print-only">Signature</th></tr></thead>
             <tbody>{rows.map(({ s, r }, i) => { const p = pay[s.id] || {}; return (

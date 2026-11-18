@@ -1,9 +1,9 @@
 // Default settings — every value can be changed from the Settings page.
 export const MONTHS = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
-export const CODES = ['P','A','CL','SL','EL','HD','LWP','WO','HO'];
+export const CODES = ['P', 'A', 'CL', 'SL', 'EL', 'HD', 'LWP', 'WO', 'HO', 'OT'];
 export const CODE_INFO = {
   P: 'Present', A: 'Absent — covered from CL, then EL; otherwise unpaid', CL: 'Casual Leave', SL: 'Sick Leave', EL: 'Earned Leave',
-  HD: 'Half day — ½ day covered from leave, otherwise unpaid', LWP: 'Leave Without Pay (always unpaid)', WO: 'Weekly Off', HO: 'Holiday',
+  HD: 'Half day — ½ day covered from leave, otherwise unpaid', OT: 'Worked on a week off / holiday — paid, plus one overtime day', LWP: 'Leave Without Pay (always unpaid)', WO: 'Weekly Off', HO: 'Holiday',
 };
 export const STATUSES = ['Active', 'Permanent', 'Provisional', 'Notice Period', 'Resigned', 'Terminated', 'Absconding', 'Inactive'];
 export const ON_ROLL = ['Active', 'Permanent', 'Notice Period'];
@@ -25,12 +25,22 @@ export const DEFAULT_SETTINGS = {
   minWagePct: 0.5,
   tax: { std: 75000, rebate: 1200000, cess: 0.04, slabs: [[0, 0], [400000, 0.05], [800000, 0.10], [1200000, 0.15], [1600000, 0.20], [2000000, 0.25], [2400000, 0.30]] },
   holidays: [{ md: '08-15', name: 'Independence Day' }, { md: '10-02', name: 'Gandhi Jayanti' }, { md: '01-26', name: 'Republic Day' }],
+  empId: { prefix: 'H4ZP-', digits: 3 },
+  designations: [],
+  salaryRanges: [],
+  employmentTypes: ['Permanent', 'Probation', 'Contract', 'Part-time', 'Consultant', 'Intern'],
+  shifts: [{ name: 'General', start: '09:00', end: '17:30' }, { name: 'Morning', start: '07:00', end: '15:00' }, { name: 'Evening', start: '15:00', end: '23:00' }, { name: 'Night', start: '21:00', end: '09:00' }],
+  defaultShift: 'General',
+  weekOff: { mode: 'fixed', days: [0] },
+  ot: { dayRate: 1, hourRate: 1 },
+  graceMins: 15,
+  brand: { logo: '', signature: '' },
   departments: ['Administration', 'Adoption Services', 'Child Care', 'Special Needs Care', 'Social Work', 'Accounts & Finance', 'Fundraising', 'Support Staff'],
 };
 
 export const EMPTY_STAFF = {
   emp_id: '', name: '', gender: '', dob: '', designation: '', department: '', sub_department: '', business_unit: '',
-  doj: '', employment_type: '', status: 'Active', dol: '', confirm_date: '', reports_to: '', attendance_mode: 'hr',
+  doj: '', employment_type: '', status: 'Active', dol: '', confirm_date: '', reports_to: '', attendance_mode: 'hr', shift: '', wo_mode: '', wo_days: [],
   mobile: '', email: '', address: '', emergency: '', qualification: '', prev_exp_years: '',
   pan: '', aadhaar: '', bank_name: '', bank_ac: '', ifsc: '', uan: '', pf_no: '', esi_no: '', payment_mode: 'Bank Transfer', emp_no_payslip: '',
   pcc_status: '', pcc_no: '', pcc_issue: '', pcc_valid_till: '', remarks: '',

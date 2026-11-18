@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { EXITED } from '../lib/defaults';
 import { fmtDate } from '../lib/format';
-import { Badge, statusTone } from '../components/ui';
+import { Badge, statusTone, Avatar } from '../components/ui';
+import { photoOf } from '../lib/brand';
 
 function Node({ p, kids, depth = 0 }) {
   const children = kids[p.id] || [];
@@ -29,7 +30,7 @@ export default function Org({ db }) {
       <div className="hr-tabs">{[['people', 'Directory'], ['chart', 'Org chart'], ['holidays', 'Holidays']].map(([k, l]) => <button key={k} className={tab === k ? 'is-on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       {tab === 'people' && Object.entries(byDept).map(([dept, list]) => (
         <section key={dept}><h3 className="hr-h3">{dept} · {list.length}</h3>
-          <div className="hr-people">{list.map((p) => <div key={p.id} className="hr-person"><span className="hr-avatar">{p.name.replace(/^Dr\.\s*/, '').split(' ').map((w) => w[0]).slice(0, 2).join('')}</span>
+          <div className="hr-people">{list.map((p) => <div key={p.id} className="hr-person"><Avatar url={photoOf(db, p.id)} name={p.name} />
             <div><b>{p.name}</b><span>{p.designation}</span><small>{p.emp_id}{p.email ? ` · ${p.email}` : ''}</small></div><Badge tone={statusTone(p.status)}>{p.status}</Badge></div>)}</div></section>))}
       {tab === 'chart' && <section className="hr-panel"><p className="hr-muted hr-small">Set “Reports to” on each staff record to shape this chart.</p><ul className="hr-org">{roots.map((p) => <Node key={p.id} p={p} kids={kids} />)}</ul></section>}
       {tab === 'holidays' && <div className="hr-table-wrap"><table className="hr-table"><thead><tr><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>

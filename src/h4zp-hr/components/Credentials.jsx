@@ -1,6 +1,6 @@
 // Show new login details and send them by WhatsApp / email, print as PDF or download.
 import React, { useState } from 'react';
-import logo from '../assets/logo.png';
+import { logoOf } from '../lib/brand';
 import { Modal, Badge } from './ui';
 import { fmtLongDate, todayIso } from '../lib/format';
 import { downloadCsv } from '../lib/store';
@@ -53,7 +53,7 @@ export function CredentialsDialog({ items, settings: S, onClose, title, note }) 
         </div>))}</div>
       <div className="print-area print-only">{slips.map((c) => (
         <article key={c.login} className="hr-slipcard">
-          <header><img src={logo} alt="" /><div><h2>{S.org}</h2><p>H4ZP HR — login details</p></div></header>
+          <header><img src={logoOf(S)} alt="" /><div><h2>{S.org}</h2><p>H4ZP HR — login details</p></div></header>
           <p>Dear <b>{c.staff?.name || c.name}</b>{c.staff?.emp_id ? ` (${c.staff.emp_id})` : ''},</p>
           <p>Your login for H4ZP HR has been created.</p>
           <table><tbody>

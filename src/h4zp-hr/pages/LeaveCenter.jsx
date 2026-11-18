@@ -4,12 +4,13 @@ import { days, fmtDate, todayIso, dayNum } from '../lib/format';
 import { Field, Input, Select, Badge, Stat, Empty } from '../components/ui';
 import LeaveRegister from './Leave';
 import { leaveBalances } from './Home';
+import { holidaySet, offDayFn, rosterByStaff } from '../lib/payroll';
 
 const tone = { Approved: 'ok', Rejected: 'bad', Pending: 'warn', Cancelled: 'mute' };
-export function leaveDays(req, S) {
+export function leaveDays(req, S, st = {}, roster = {}) {
   if (!req.from) return 0; if (req.half) return 0.5;
-  const hol = new Set(S.holidays.map((h) => `${Number(h.md.slice(0, 2)) >= 4 ? S.fyStart : S.fyStart + 1}-${h.md}`)); let n = 0;
-  for (let d = dayNum(req.from); d <= dayNum(req.to || req.from); d++) { const dt = new Date(d * 86400000); if (dt.getUTCDay() !== 0 && !hol.has(dt.toISOString().slice(0, 10))) n++; }
+  const hol = holidaySet(S), off = offDayFn(st, S, roster); let n = 0;
+  for (let d = dayNum(req.from); d <= dayNum(req.to || req.from); d++) { const day = new Date(d * 86400000).toISOString().slice(0, 10); if (!off(day) && !hol.has(day)) n++; }
   return n;
 }
 
@@ -23,7 +24,7 @@ export default function LeaveCenter(ctx) {
   const name = (id) => db.directory.find((p) => p.id === id)?.name || '—';
   const balOf = (sid) => { const st = db.staff.find((s) => s.id === sid); return st && results[sid] ? leaveBalances(st, results[sid], S, st.status === 'Provisional' ? 0 : S.leave.SL) : null; };
   const target = db.staff.find((s) => s.id === f.staff_id);
-  const n = leaveDays(f, S); const bal = target ? balOf(target.id) : null;
+  const n = leaveDays(f, S, target || {}, target ? rosterByStaff(db.records)[target.id] || {} : {}); const bal = target ? balOf(target.id) : null;
   const short = bal && f.type !== 'LWP' && n > bal[f.type];
   const apply = async () => {
     if (!target) { notify('Choose the employee.', 'bad'); return; }
@@ -52,7 +53,7 @@ export default function LeaveCenter(ctx) {
 
   return (
     <div className="hr-page">
-      <header className="hr-head"><div><h1>Leave</h1><p className="hr-muted">Approved leave is marked in attendance and salary automatically. Sundays and holidays inside a request are not counted.</p></div></header>
+      <header className="hr-head"><div><h1>Leave</h1><p className="hr-muted">Approved leave is marked in attendance and salary automatically. Week-offs and holidays inside a request are not counted.</p></div></header>
       <div className="hr-tabs">{tabs.map(([k, l]) => <button key={k} className={tab === k ? 'is-on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
       {tab === 'mine' && <>
         {myBal && <section className="hr-grid hr-grid--stats"><Stat label="Casual leave left" value={days(myBal.CL)} /><Stat label="Sick leave left" value={days(myBal.SL)} /><Stat label="Earned leave left" value={days(myBal.EL)} /></section>}
